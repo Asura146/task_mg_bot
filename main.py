@@ -93,36 +93,42 @@ async def list(ctx):
     message_lines = [f"📋 タスク一覧（全{len(user_tasks)}件）:"]
     for idx, task in enumerate(sorted_tasks, 1):
         date_str = task["date"][:16]  # "YYYY-MM-DD HH:MM"
-        message_lines.append(f"{idx}. 🕒 {date_str} - {task['content']}")
+        content = task["content"]
+        message_lines.append(f"{idx}. 🕒 {date_str} - {content}")
 
     await ctx.send("\n".join(message_lines))
 
 @bot.command()
-async def remove(ctx,index:int):
+async def remove(ctx, index: int):
     current_tasks = load_tasks()
 
     user_tasks = [
         t for t in current_tasks
-        if str(t.get("channel_id"))==str(ctx.channel.id)
+        if str(t.get("channel_id")) == str(ctx.channel.id)
     ]    
 
     if not user_tasks:
         await ctx.send("📭 このチャンネルには削除できるタスクがありません。")
         return
     
+    # listコマンドと同様に日付順にソート
+    sorted_tasks = sorted(
+        user_tasks,
+        key=lambda t: datetime.strptime(t["date"], "%Y-%m-%d %H:%M:%S")
+    )
+
     # インデックスの範囲チェック（1始まり）
-    if index < 1 or index > len(user_tasks):
-        await ctx.send(f"⚠ 番号が無効です。1〜{len(user_tasks)}の範囲で指定してください。")
+    if index < 1 or index > len(sorted_tasks):
+        await ctx.send(f"⚠ 番号が無効です。1〜{len(sorted_tasks)}の範囲で指定してください。")
         return
     
-    task_to_remove = user_tasks[index - 1]
+    task_to_remove = sorted_tasks[index - 1]
 
     updated_tasks = [t for t in current_tasks if t["id"] != task_to_remove["id"]]
 
     save_tasks(updated_tasks)
 
     await ctx.send(f"🗑 タスク削除完了: {task_to_remove['content']}")
-
 
 
 @tasks.loop(minutes=1)
