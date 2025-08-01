@@ -1,8 +1,8 @@
 import os
 from dotenv import load_dotenv
 import discord
-from discord.ext import commands
-from datetime import datetime
+from discord.ext import commands,tasks
+from datetime import datetime,timedelta
 import json
 import os
 import uuid
@@ -20,7 +20,7 @@ def save_tasks(tasks):
     with open(TASK_FILE,"w",encoding="utf-8") as f:
         json.dump(tasks,f,indent=2,ensure_ascii=False)
 
-tasks = load_tasks()
+task_list = load_tasks()
 
 # トークンを.envから読み込む
 load_dotenv()
@@ -37,6 +37,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 @bot.event
 async def on_ready():
     print(f'✅ ログイン完了: {bot.user}')
+    daily_summary.start()
 
 # !hello とチャットすると反応する
 @bot.command()
@@ -45,7 +46,7 @@ async def hello(ctx):
 
 @bot.command()
 async def add(ctx,date:str,*,content:str):
-    tasks = load_tasks()
+    task_list = load_tasks()
     try :
         now = datetime.now()
         month ,day = map(int, date.split("/"))
@@ -65,8 +66,8 @@ async def add(ctx,date:str,*,content:str):
         "content":content
     }
 
-    tasks.append(task)
-    save_tasks(tasks)
+    task_list.append(task)
+    save_tasks(task_list)
     
 @bot.command()
 async def list(ctx):
@@ -121,6 +122,45 @@ async def remove(ctx,index:int):
     save_tasks(updated_tasks)
 
     await ctx.send(f"🗑 タスク削除完了: {task_to_remove['content']}")
+
+
+
+@tasks.loop(minutes=1)
+async def daily_summary():
+    now = datetime.now()
+    if now.hour != 9 or now.minute != 0:
+        return
+    current_tasks = load_tasks()
+
+    if not current_tasks:
+        return  # タスクが空なら何もしない
+    
+    channels = set(t["channel_id"] for t in current_tasks)
+
+    for channel_id in channels:
+        channel_tasks = [
+            t for t in current_tasks
+            if t["channel_id"] == channel_id
+            and datetime.strptime(t["date"], "%Y-%m-%d %H:%M:%S") >= now
+        ]
+
+        if not channel_tasks:
+            continue
+
+        sorted_tasks = sorted(
+            channel_tasks,
+            key=lambda t: t["date"]
+        )
+
+        lines = [f"📅 現在のタスク一覧 ({len(sorted_tasks)} 件):"]
+        for idx, task in enumerate(sorted_tasks, 1):
+            date_str = task["date"][:16]  # YYYY-MM-DD HH:MM
+            lines.append(f"{idx}. 🕒 {date_str} - {task['content']}")
+
+        channel = bot.get_channel(int(channel_id))
+        if channel:
+            await channel.send("\n".join(lines))
+
 
 # Bot起動
 bot.run(TOKEN)
